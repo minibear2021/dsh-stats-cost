@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Custo da conversa",
+    "description": "Adiciona uma aba de custo às vistas de conversa: defina os preços por milhão de tokens (entrada sem cache, entrada com cache, saída) e veja o custo desta conversa."
+  }
+}

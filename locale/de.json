@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gesprächskosten",
+    "description": "Fügt den Gesprächsansichten einen Kosten-Tab hinzu: Preise pro Million Tokens (nicht gecachte Eingabe, gecachte Eingabe, Ausgabe) festlegen und die Kosten dieses Gesprächs anzeigen."
+  }
+}

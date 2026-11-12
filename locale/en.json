@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Conversation cost",
+    "description": "Adds a cost tab to the conversation views: set per-million-token prices (uncached input, cached input, output) and see this conversation's token cost."
+  }
+}

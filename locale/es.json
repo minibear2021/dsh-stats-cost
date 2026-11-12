@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Coste de la conversación",
+    "description": "Añade una pestaña de coste a las vistas de conversación: define los precios por millón de tokens (entrada sin caché, entrada con caché, salida) y consulta el coste de esta conversación."
+  }
+}
