@@ -44,7 +44,8 @@ jobs:
         run: |
           set -euo pipefail
           current="$(node -p "require('./package.json').version")"
-          registry="$(npm view "$npm_package_name" version 2>/dev/null || echo none)"
+          name="$(node -p "require('./package.json').name")"
+          registry="$(npm view "$name" version 2>/dev/null || echo none)"
           {
             echo "current=$current"
             echo "registry=$registry"
