@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Coste de la conversación",
-    "description": "Defina en el gestor de complementos los precios por millón de tokens (entrada sin caché, entrada con caché, salida) y consulte el coste de tokens de esta conversación en el muelle del compositor y por turno."
+    "description": "Una vez indicados los precios de su modelo, la barra del compositor y el final de cada respuesta muestran cuánto ha costado esa respuesta y la conversación completa hasta ahora."
   }
 }

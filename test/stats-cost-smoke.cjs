@@ -416,7 +416,7 @@ assert.strictEqual(fieldEls[2].props.value, "15");
 assert.ok(cardEl.children.some((c) => c.type === "p" && c.props.className === "scst_writeHint"), "billing note under the fields");
 const heading = cardEl.children.find((c) => c.type === "p" && c.props.className === "scst_configHeading");
 assert.ok(heading, "section heading above the fields (bundle detail page has no other heading)");
-assert.deepStrictEqual(heading.children, ["单价设置"], "heading copy from the dictionary");
+assert.deepStrictEqual(heading.children, ["模型单价"], "heading copy from the dictionary");
 console.log("card page OK: SettingsForm with 3 numeric fields + heading + write hint");
 
 // --- editing a field stages the value into the form model ---

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Gesprächskosten",
-    "description": "Legen Sie im Plugin-Manager Preise pro Million Tokens (nicht gecachte Eingabe, gecachte Eingabe, Ausgabe) fest und sehen Sie die Tokenkosten dieses Gesprächs in der Composer-Leiste und je Turn."
+    "description": "Nachdem Sie die Preise Ihres Modells angegeben haben, zeigen die Composer-Leiste und der Schluss jeder Antwort, was diese Antwort und das ganze Gespräch bisher gekostet haben."
   }
 }

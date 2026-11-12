@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Conversation cost",
-    "description": "Set per-million-token prices (uncached input, cached input, output) in the plugin manager, and see this conversation's token cost in the composer dock and per turn."
+    "description": "Once you enter your model prices, the composer bar and the end of each reply show what that reply and the whole conversation cost so far."
   }
 }
