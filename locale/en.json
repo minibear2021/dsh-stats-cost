@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Conversation cost",
-    "description": "Adds a cost tab to the conversation views: set per-million-token prices (uncached input, cached input, output) and see this conversation's token cost."
+    "description": "Set per-million-token prices (uncached input, cached input, output) in the plugin manager, and see this conversation's token cost in the composer dock and per turn."
   }
 }

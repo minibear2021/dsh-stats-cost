@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Coût de la conversation",
-    "description": "Ajoute un onglet Coût aux vues de conversation : définissez les tarifs par million de jetons (entrée non en cache, entrée en cache, sortie) et consultez le coût de cette conversation."
+    "description": "Fixez dans le gestionnaire de plugins les tarifs par million de jetons (entrée non en cache, entrée en cache, sortie), et consultez le coût en jetons de cette conversation dans le dock du composeur et à chaque tour."
   }
 }

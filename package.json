@@ -1,6 +1,6 @@
 {
   "name": "@local/stats-cost",
-  "description": "Conversation cost tab: set per-million-token prices and see this conversation's token cost",
+  "description": "Conversation cost statistics: set per-million-token unit prices in the plugin manager; see the cost in the composer dock and per turn",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -27,8 +27,14 @@
         "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-renderer"
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.19.0"
   }
 }

@@ -34,6 +34,15 @@ const client = pkg.dsh.client;
 if (client.platform !== "web") throw new Error("platform must be web");
 if (!Array.isArray(client.inject)) throw new Error("inject must be array");
 console.log("client.inject:", client.inject.join(", "));
+// The settings form needs its provider packages parked before the client half.
+for (const dep of [
+  "@deepseek-ai/dsh-client-ui-settings",
+  "@deepseek-ai/dsh-client-ui-plugin-manager",
+  "@deepseek-ai/dsh-client-ui-primitives"
+]) {
+  if (!client.inject.includes(dep)) throw new Error("client.inject missing " + dep);
+}
+console.log("settings providers OK: settings, plugin-manager, primitives");
 if (client.immediately !== undefined && client.immediately !== true) throw new Error("immediately must be true when present");
 console.log("client.immediately:", client.immediately === undefined ? "(absent — session-scoped lazy inject, proven accepted by host)" : client.immediately);
 
@@ -44,5 +53,14 @@ console.log("patch OK:", patch);
 const iconBytes = fs.statSync("icon.svg").size;
 if (iconBytes > 256 * 1024) throw new Error("icon too big");
 console.log("icon OK:", iconBytes, "bytes");
+
+// The host half must export the volatile price schema the settings service exposes.
+const host = fs.readFileSync("index.js", "utf8");
+if (!/export const Config = z\.object\(\{/.test(host)) throw new Error("index.js must export the Config schema");
+for (const field of ["priceInput", "priceCache", "priceOutput"]) {
+  if (!host.includes(field + ":")) throw new Error("Config schema missing " + field);
+}
+if (!host.includes(".volatile()")) throw new Error("Config fields must be volatile (no restart on edit)");
+console.log("host Config OK: priceInput / priceCache / priceOutput (volatile)");
 
 console.log("\nMANIFEST SANITY OK");

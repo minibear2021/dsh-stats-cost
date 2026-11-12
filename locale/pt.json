@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Custo da conversa",
-    "description": "Adiciona uma aba de custo às vistas de conversa: defina os preços por milhão de tokens (entrada sem cache, entrada com cache, saída) e veja o custo desta conversa."
+    "description": "Defina no gerenciador de plugins os preços por milhão de tokens (entrada sem cache, entrada com cache, saída) e veja o custo em tokens desta conversa no dock do compositor e por rodada."
   }
 }

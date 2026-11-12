@@ -1,6 +1,7 @@
 // Smoke test: execute the client module factory with stubs, invoke apply,
-// and verify locale dictionaries, slot registration, cost computation,
-// and the composer-dock cost pill + portaled dialog behavior.
+// and verify locale dictionaries, slot registration, the plugin-manager
+// settings form (configForms bridge), cost computation, and the
+// composer-dock cost pill + portaled dialog + per-turn chip behavior.
 const fs = require("fs");
 const assert = require("assert");
 
@@ -45,11 +46,6 @@ const rafQueue = [];
 global.window = {
   innerWidth: 1200,
   __ModuleLoader__: { load: (m) => { loaded = m; } },
-  localStorage: {
-    _s: new Map(),
-    getItem(k) { return this._s.has(k) ? this._s.get(k) : null; },
-    setItem(k, v) { this._s.set(k, String(v)); }
-  },
   requestAnimationFrame: (fn) => { rafQueue.push(fn); return rafQueue.length; },
   cancelAnimationFrame: (id) => { if (id) rafQueue.splice(id - 1, 1); }
 };
@@ -92,6 +88,130 @@ const ReactStub = {
 };
 const createPortalStub = (child, container) => ({ type: "__portal", container, props: {}, children: [child] });
 
+// --- stub @deepseek-ai/dsh-client-ui-primitives (the settings form kit) ---
+const primitivesStub = {
+  settingsNumberField: (name) => ({ kind: "number", name }),
+  SettingsForm: "SettingsForm",
+  SettingsValueField: "SettingsValueField",
+  SettingsFormModel: class {
+    constructor(scope, fields) {
+      this.scope = scope;
+      this.fields = fields.map((f) => f.name);
+      this.listeners = new Set();
+      this.staged = {};
+      this.disposed = false;
+    }
+    shell() {
+      const snap = this.scope.getSnapshot();
+      return {
+        available: snap.status === "ready",
+        writable: snap.status === "ready" && snap.writable !== false,
+        dirty: Object.keys(this.staged).length > 0,
+        invalid: false,
+        saving: false,
+        failed: false
+      };
+    }
+    field(name) {
+      if (!this.fields.includes(name)) throw new Error("unknown field " + name);
+      const snap = this.scope.getSnapshot();
+      const value = this.staged[name] !== undefined
+        ? this.staged[name]
+        : snap.value !== undefined ? snap.value[name] : undefined;
+      return {
+        value: value === undefined || value === null ? "" : String(value),
+        overridden: snap.user !== undefined && Object.prototype.hasOwnProperty.call(snap.user, name),
+        invalid: false
+      };
+    }
+    bind(project) {
+      return {
+        getSnapshot: () => project(),
+        subscribe: (listener) => {
+          this.listeners.add(listener);
+          return () => this.listeners.delete(listener);
+        }
+      };
+    }
+    actions() {
+      const emit = () => { for (const l of [...this.listeners]) l(); };
+      return {
+        edit: (field, text) => {
+          this.staged[field] = text === "" ? undefined : Number(text);
+          emit();
+        },
+        resetField: (field) => {
+          delete this.staged[field];
+          emit();
+        },
+        save: () => {
+          const ops = Object.entries(this.staged).map(([path, value]) => (
+            value === undefined
+              ? { op: "unset", path: [path] }
+              : { op: "set", path: [path], value }
+          ));
+          const ok = this.scope.mutate(ops, this.scope.getSnapshot().revision);
+          if (ok) this.staged = {};
+          emit();
+          return ok;
+        },
+        discard: () => {
+          this.staged = {};
+          emit();
+        }
+      };
+    }
+    dispose() {
+      this.disposed = true;
+      this.listeners.clear();
+    }
+  }
+};
+
+// --- settings document: this plugin's host configuration namespace ---
+// The controller mirrors the real ConfigFormController: a stable snapshot
+// reference that the mirror replaces, plus subscribers and a mutate that
+// folds answers in and notifies (like the settings document mirror).
+const SETTINGS_NS = "stats-cost";
+let formSnapshots = {};
+const controllers = new Map();
+function makeFormController(id) {
+  const controller = {
+    id,
+    snapshot: formSnapshots[id] ?? { status: "loading", value: undefined, base: undefined, user: undefined, revision: undefined, writable: false },
+    listeners: new Set(),
+    mutates: [],
+    disposed: false,
+    getSnapshot() { return this.snapshot; },
+    subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },
+    mutate(ops, revision) {
+      this.mutates.push({ ops, revision });
+      const value = { ...(this.snapshot.value ?? {}) };
+      for (const op of ops) {
+        if (op.op === "set") value[op.path[0]] = op.value;
+        else delete value[op.path[0]];
+      }
+      formSnapshots[id] = {
+        ...this.snapshot,
+        value,
+        user: { ...(this.snapshot.user ?? {}), ...Object.fromEntries(ops.map((op) => [op.path[0], op.value])) },
+        revision: (this.snapshot.revision ?? 0) + 1
+      };
+      this.snapshot = formSnapshots[id];
+      this.notify();
+      return true;
+    },
+    dispose() { this.disposed = true; },
+    notify() { for (const l of [...this.listeners]) l(); }
+  };
+  return controller;
+}
+function controllerFor(id) {
+  if (!controllers.has(id)) controllers.set(id, makeFormController(id));
+  return controllers.get(id);
+}
+
+// --- stub plugin context ---
 const ctxEffects = [];
 const ctxSlotInjected = [];
 const ctx = {
@@ -103,7 +223,7 @@ const ctx = {
   },
   locale: {
     registered: new Map(),
-    register: function (ns, dicts) {
+    register(ns, dicts) {
       this.registered.set(ns, dicts);
       return () => this.registered.delete(ns);
     },
@@ -116,22 +236,45 @@ const ctx = {
     injected: ctxSlotInjected,
     inject: (key, fn) => { ctxSlotInjected.push({ key, fn }); },
     register: (options, component) => ({ options, component })
+  },
+  configForms: {
+    get: (id) => controllerFor(id),
+    whileServed: (namespaces, register) => {
+      const served = new Set(namespaces.filter((ns) => formSnapshots[ns] !== undefined));
+      let off;
+      if (served.size > 0) off = register(served);
+      return () => { off?.(); };
+    }
   }
 };
 
-const clientModule = loaded.factory((id) => (id === "react-dom" ? { createPortal: createPortalStub } : ReactStub));
-assert.deepStrictEqual(clientModule.inject, ["slots", "locale"], "inject list");
+const clientModule = loaded.factory((id) => {
+  if (id === "react-dom") return { createPortal: createPortalStub };
+  if (id === "@deepseek-ai/dsh-client-ui-primitives") return primitivesStub;
+  return ReactStub;
+});
+assert.deepStrictEqual(clientModule.inject, ["slots", "locale", "configForms"], "inject list");
+
+// The settings namespace is still loading when apply runs (the mirror
+// answers later): prices must start unpriced and fill in on notify.
+formSnapshots[SETTINGS_NS] = { status: "loading", value: undefined, base: undefined, user: undefined, revision: undefined, writable: false };
 clientModule.apply(ctx);
 
-// --- locale dictionaries: 8 locales, identical key sets, zh has 20 keys ---
+// --- the form was obtained for the plugin's settings namespace ---
+assert.deepStrictEqual([...controllers.keys()], [SETTINGS_NS], "configForms.get('stats-cost')");
+
+// --- locale dictionaries: 8 locales, identical key sets, zh has 21 keys ---
 const dicts = ctx.locale.registered.get("statsCost");
 assert.ok(dicts, "statsCost namespace registered");
 assert.deepStrictEqual(Object.keys(dicts).sort(), ["de", "en", "es", "fr", "ja", "pt", "ru", "zh"]);
 const zhKeys = Object.keys(dicts.zh).sort();
-assert.strictEqual(zhKeys.length, 20, `zh key count ${zhKeys.length}`);
+assert.strictEqual(zhKeys.length, 21, `zh key count ${zhKeys.length}`);
 assert.ok(dicts.zh["dock.cost"], "dock.cost present");
 assert.ok(dicts.zh["dialog.cost"], "dialog.cost present");
 assert.strictEqual(dicts.zh["turn.title"], "本轮成本", "turn.title present");
+assert.ok(dicts.zh["settings.description"], "settings.description present");
+assert.ok(dicts.zh["settings.writeHint"], "settings.writeHint present");
+assert.ok(!dicts.zh["view.cost"], "view.cost key removed with the Cost tab");
 for (const [lang, d] of Object.entries(dicts)) {
   assert.deepStrictEqual(Object.keys(d).sort(), zhKeys, `key mismatch in ${lang}`);
   for (const [k, v] of Object.entries(d)) {
@@ -139,44 +282,63 @@ for (const [lang, d] of Object.entries(dicts)) {
     assert.ok(v.length > 0, `${lang}.${k} empty`);
   }
 }
-console.log("locale OK: 8 locales × 20 keys:", zhKeys.join(", "));
+console.log("locale OK: 8 locales × 21 keys");
 
-// --- slot registration: conversation.view + composer.dock + assistant-actions ---
-assert.strictEqual(ctx.slots.injected.length, 3);
-const viewEntry = ctxSlotInjected.find((e) => e.key === "conversation.view");
+// --- slot registration: NO conversation.view; plugins.row.config + dock + assistant-actions ---
+assert.strictEqual(ctx.slots.injected.length, 3, `injected: ${ctx.slots.injected.map((e) => e.key)}`);
+assert.strictEqual(ctxSlotInjected.find((e) => e.key === "conversation.view"), undefined, "conversation.view (Cost tab) removed");
+const rowEntry = ctxSlotInjected.find((e) => e.key === "plugins.row.config");
 const dockEntry = ctxSlotInjected.find((e) => e.key === "conversation.composer.dock");
 const turnEntry = ctxSlotInjected.find((e) => e.key === "conversation.chat.assistant-actions");
-assert.ok(viewEntry && dockEntry && turnEntry, "all three slots injected");
-const viewReg = viewEntry.fn();
-assert.strictEqual(viewReg.options.name, "conversation.view");
-assert.strictEqual(viewReg.options.id, "cost");
-assert.strictEqual(viewReg.options.label(), "成本");
+assert.ok(rowEntry && dockEntry && turnEntry, "all three slots injected");
+const rowReg = rowEntry.fn();
+assert.strictEqual(rowReg.options.name, "plugins.row.config");
+assert.strictEqual(rowReg.options.key, "@local/stats-cost#stats-cost", "row config key = pkg#rowId");
+assert.strictEqual(rowReg.options.locale, "statsCost");
+assert.ok(rowReg.component, "row config component present");
+const face = rowReg.options.inject();
+assert.ok(face.hooks?.costConfig?.getSnapshot, "inject face carries the form snapshot hook");
+for (const action of ["save", "discard", "edit", "resetField"]) {
+  assert.strictEqual(typeof face[action], "function", `inject face carries ${action}`);
+}
 const dockReg = dockEntry.fn();
 assert.strictEqual(dockReg.options.name, "conversation.composer.dock");
 assert.strictEqual(dockReg.options.id, "cost");
 assert.strictEqual(dockReg.options.order, 2, "dock order 2 → after usage, before context meter");
 assert.strictEqual(dockReg.options.label(), "成本");
 assert.ok(dockReg.component, "dock component present");
-assert.notStrictEqual(dockReg.component, viewReg.component, "distinct components");
+assert.notStrictEqual(dockReg.component, rowReg.component, "distinct components");
 const turnReg = turnEntry.fn();
 assert.strictEqual(turnReg.options.name, "conversation.chat.assistant-actions");
 assert.strictEqual(turnReg.options.id, "cost");
 assert.strictEqual(turnReg.options.order, 20, "turn order 20 → after shipped feedback (10), inside the usage row");
 assert.ok(turnReg.component, "turn chip component present");
 assert.notStrictEqual(turnReg.component, dockReg.component, "turn chip distinct from dock pill");
-console.log("slots OK: view id=cost + dock id=cost order=2 + assistant-actions id=cost order=20");
+console.log("slots OK: row.config @local/stats-cost#stats-cost + dock id=cost order=2 + assistant-actions id=cost order=20 (no conversation.view)");
 
-// --- effects registered ---
-assert.strictEqual(ctx.effects.length, 2, `effects: ${ctx.effects.map((e) => e.label)}`);
-assert.ok(styleTags.length === 1 && styleTags[0].textContent.includes("scst_root"), "style tag with CSS");
-assert.ok(styleTags[0].textContent.includes("scst_panel"), "dialog CSS present");
+// --- effects registered: dictionaries, styles, form subscription, price bridge, settings page ---
+assert.strictEqual(ctx.effects.length, 5, `effects: ${ctx.effects.map((e) => e.label)}`);
+assert.deepStrictEqual(ctx.effects.map((e) => e.label), [
+  "stats-cost: dictionaries",
+  "stats-cost: styles",
+  "stats-cost: form subscription",
+  "stats-cost: price bridge",
+  "stats-cost: settings page"
+]);
+assert.ok(styleTags.length === 1 && styleTags[0].textContent.includes("scst_root") === false, "view CSS removed");
 assert.ok(styleTags[0].textContent.includes("scst_pill"), "pill CSS present");
-// effect cleanup removes the style tag
-for (const e of [...ctx.effects]) e.cleanup();
+assert.ok(styleTags[0].textContent.includes("scst_panel"), "dialog CSS present");
+assert.ok(styleTags[0].textContent.includes("scst_turnChip"), "turn chip CSS present");
+assert.ok(styleTags[0].textContent.includes("scst_writeHint"), "settings write-hint CSS present");
+// Only the style effect tears down here: the price bridge and the form must
+// survive into the pill/card sections below (the real runtime tears every
+// effect down at the very end, verified after the last section).
+for (const e of [...ctx.effects]) if (e.label === "stats-cost: styles") e.cleanup();
 assert.strictEqual(global.document.querySelector(`style[data-plugin-css="@local/stats-cost/cost.css"]`), null);
-console.log("effects OK: 2 effects, style tag removed on cleanup");
+console.log("effects OK: 5 effects, style tag removed on cleanup");
 
 // --- helpers ---
+const t = (k) => dicts.zh[k] ?? k;
 function texts(node) {
   if (node === null || node === undefined || typeof node === "string") return [node];
   if (Array.isArray(node)) return node.flatMap(texts);
@@ -197,101 +359,121 @@ function cellTexts(el, tag) {
   })(el);
   return out;
 }
-
-// --- CostView: render with stub projections and verify cost math ---
-let useProjectionCalls = [];
-let PROJECTION_VALUES = {}; // filled below; undefined keys mean "absent"
-global.window.localStorage.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "3", cache: "0.3", output: "15" }));
-const component = viewReg.component;
-let el;
-ReactStub.__reset();
-ReactStub.__beginRender();
-el = component({
-  t: (key) => dicts.zh[key] ?? key,
-  useProjection: (key) => { useProjectionCalls.push(key); return PROJECTION_VALUES[key]; }
-});
-assert.deepStrictEqual(useProjectionCalls.sort(), ["sessionStats", "tokenUsage"]);
-const tdTexts = cellTexts(el, "td");
-// first render saw no projections (dashes); re-render with real values below
-console.log("first-render td texts:", JSON.stringify(tdTexts));
-assert.ok(tdTexts.length > 0, "first render produced cells");
-
-// second render with real projection values
-PROJECTION_VALUES = {
-  tokenUsage: { uncachedInputTokens: 1200000, cacheReadTokens: 300000, cacheWriteTokens: 50000, outputTokens: 800000 },
-  sessionStats: { steps: 10, turns: 4 }
-};
-useProjectionCalls = [];
-ReactStub.__reset();
-ReactStub.__beginRender();
-const el2 = component({
-  t: (key) => dicts.zh[key] ?? key,
-  useProjection: (key) => PROJECTION_VALUES[key]
-});
-const tdTexts2 = cellTexts(el2, "td");
-console.log("measured td texts:", JSON.stringify(tdTexts2));
-const expected = ["未缓存输入", "1.20M", "¥ 3.60", "缓存读取", "300.0k", "¥ 0.09", "缓存写入", "50.0k", "¥ 0.15", "输出", "800.0k", "¥ 12.00", "总成本", "2.35M", "¥ 15.84"];
-assert.deepStrictEqual(tdTexts2, expected, "cost math");
-console.log("cost math OK:", tdTexts2.join(" | "));
-
-// --- unmeasured session (steps = 0) shows dashes ---
-PROJECTION_VALUES.sessionStats = { steps: 0, turns: 0 };
-ReactStub.__reset();
-ReactStub.__beginRender();
-const el3 = component({ t: (k) => dicts.zh[k] ?? k, useProjection: (k) => PROJECTION_VALUES[k] });
-const tdTexts3 = cellTexts(el3, "td");
-console.log("unmeasured td texts:", JSON.stringify(tdTexts3));
-assert.ok(tdTexts3.every((s) => s === "—" || s === "总成本"), "unmeasured shows dashes");
-
-// --- missing projection (undefined) shows dashes ---
-PROJECTION_VALUES.tokenUsage = void 0;
-PROJECTION_VALUES.sessionStats = void 0;
-ReactStub.__reset();
-ReactStub.__beginRender();
-const el4 = component({ t: (k) => dicts.zh[k] ?? k, useProjection: () => void 0 });
-const tdTexts4 = cellTexts(el4, "td");
-assert.ok(tdTexts4.every((s) => s === "—" || s === "总成本"), "absent projections show dashes");
-console.log("absent projections OK");
-
-// --- partial prices: only output set → per-row costs "—", total sums only output ---
-PROJECTION_VALUES.tokenUsage = { uncachedInputTokens: 1000, cacheReadTokens: 2000, cacheWriteTokens: 100, outputTokens: 4000 };
-PROJECTION_VALUES.sessionStats = { steps: 1, turns: 1 };
-const store = global.window.localStorage;
-store.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "", cache: "", output: "2.5" }));
-ReactStub.__reset();
-ReactStub.__beginRender();
-const el5 = component({ t: (k) => dicts.zh[k] ?? k, useProjection: (k) => PROJECTION_VALUES[k] });
-const tdTexts5 = cellTexts(el5, "td");
-console.log("partial-price td texts:", JSON.stringify(tdTexts5));
-assert.deepStrictEqual(tdTexts5, ["未缓存输入", "1000", "—", "缓存读取", "2000", "—", "缓存写入", "100", "—", "输出", "4000", "¥ 0.01", "总成本", "7100", "¥ 0.01"]);
-console.log("partial prices OK");
+let PROJECTION_VALUES = {};
 
 // ==================================================================
-// Composer dock CostPill + dialog
+// Plugin-manager settings card (plugins.row.config)
+// ==================================================================
+const card = rowReg.component;
+const useCostConfig = (selector) => selector(face.hooks.costConfig.getSnapshot());
+
+// --- summary view: the row's one-liner ---
+assert.strictEqual(card({ t, view: "summary", useCostConfig, save: face.save, discard: face.discard, edit: face.edit, resetField: face.resetField }), dicts.zh["settings.description"], "summary view is the description");
+console.log("card summary OK:", dicts.zh["settings.description"]);
+
+// --- page view: the shared settings form with three price fields ---
+// First set the document to its ready state (the mirror answered).
+const formCtrl = controllerFor(SETTINGS_NS);
+formCtrl.snapshot = {
+  status: "ready",
+  value: { priceInput: 3, priceCache: 0.3, priceOutput: 15 },
+  base: {},
+  user: { priceInput: 3, priceCache: 0.3, priceOutput: 15 },
+  revision: 1,
+  writable: true
+};
+formCtrl.notify();
+let cardEl = card({ t, view: "page", useCostConfig, save: face.save, discard: face.discard, edit: face.edit, resetField: face.resetField });
+assert.strictEqual(cardEl.type, "SettingsForm", "page renders the shared SettingsForm");
+assert.deepStrictEqual(cardEl.props.labels, {
+  unavailable: dicts.zh["settings.unavailable"],
+  readOnly: dicts.zh["settings.readOnly"],
+  saveFailed: dicts.zh["settings.saveFailed"],
+  save: "保存",
+  saving: "保存中…"
+}, "form frame labels");
+const state = cardEl.props.state;
+assert.deepStrictEqual(Object.keys(state).sort(), ["available", "dirty", "failed", "invalid", "priceCache", "priceInput", "priceOutput", "saving", "writable"]);
+assert.strictEqual(state.available, true, "form available once served");
+assert.strictEqual(state.writable, true, "form writable");
+assert.strictEqual(state.dirty, false, "not dirty while pristine");
+const fieldEls = cardEl.children.filter((c) => c.type === "SettingsValueField");
+assert.strictEqual(fieldEls.length, 3, "three price fields");
+assert.strictEqual(fieldEls[0].props.id, "stats-cost-price-input");
+assert.strictEqual(fieldEls[0].props.label, "输入（未缓存）");
+assert.strictEqual(fieldEls[0].props.hint, dicts.zh["price.inputHint"]);
+assert.strictEqual(fieldEls[0].props.numeric, true, "numeric field");
+assert.strictEqual(fieldEls[0].props.value, "3", "current value from the settings document");
+assert.strictEqual(fieldEls[1].props.value, "0.3");
+assert.strictEqual(fieldEls[2].props.value, "15");
+assert.ok(cardEl.children.some((c) => c.type === "p" && c.props.className === "scst_writeHint"), "billing note under the fields");
+console.log("card page OK: SettingsForm with 3 numeric fields + write hint");
+
+// --- editing a field stages the value into the form model ---
+fieldEls[0].props.onEdit("12");
+cardEl = card({ t, view: "page", useCostConfig, save: face.save, discard: face.discard, edit: face.edit, resetField: face.resetField });
+assert.strictEqual(cardEl.props.state.priceInput.value, "12", "staged edit visible in the snapshot");
+assert.strictEqual(cardEl.props.state.dirty, true, "dirty after edit");
+face.discard();
+cardEl = card({ t, view: "page", useCostConfig, save: face.save, discard: face.discard, edit: face.edit, resetField: face.resetField });
+assert.strictEqual(cardEl.props.state.priceInput.value, "3", "discard restores the document value");
+console.log("card edit OK: onEdit stages, discard restores");
+
+// --- saving pushes ops to the document, which the mirror folds back ---
+fieldEls[0].props.onEdit("2");
+face.save();
+assert.deepStrictEqual(formCtrl.mutates[0], { ops: [{ op: "set", path: ["priceInput"], value: 2 }], revision: 1 }, "one set op with the current revision");
+assert.strictEqual(formCtrl.snapshot.value.priceInput, 2, "document updated");
+cardEl = card({ t, view: "page", useCostConfig, save: face.save, discard: face.discard, edit: face.edit, resetField: face.resetField });
+assert.strictEqual(cardEl.props.state.priceInput.value, "2", "saved value back from the mirror");
+assert.strictEqual(cardEl.props.state.dirty, false, "clean after save");
+// restore the canonical prices for the pill/chip math below
+formCtrl.mutate([{ op: "set", path: ["priceInput"], value: 3 }]);
+console.log("card save OK: ops → document → mirror → form");
+
+// ==================================================================
+// Composer dock CostPill + dialog (prices from the settings document)
 // ==================================================================
 const pill = dockReg.component;
-const t = (k) => dicts.zh[k] ?? k;
+let useProjectionCalls = 0;
 
-// --- pill renders a button with the total cost; no portal while closed ---
-store.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "3", cache: "0.3", output: "15" }));
+// --- while the document is still loading: unpriced dash ---
+PROJECTION_VALUES = {};
+formCtrl.snapshot = { status: "loading", value: undefined, base: undefined, user: undefined, revision: undefined, writable: false };
+ReactStub.__reset();
+ReactStub.__beginRender();
+let pillEl = pill({ t, useProjection: (k) => PROJECTION_VALUES[k] });
+assert.strictEqual(texts(findAll(pillEl, (n) => n.type === "button")[0]).filter((x) => typeof x === "string").join(" "), "—", "unpriced while loading");
+console.log("pill OK: — while the settings document loads");
+
+// --- the mirror answers: prices land and the pill re-renders live ---
+formCtrl.snapshot = {
+  status: "ready",
+  value: { priceInput: 3, priceCache: 0.3, priceOutput: 15 },
+  base: {},
+  user: { priceInput: 3, priceCache: 0.3, priceOutput: 15 },
+  revision: 1,
+  writable: true
+};
+formCtrl.notify();
 PROJECTION_VALUES = {
   tokenUsage: { uncachedInputTokens: 1200000, cacheReadTokens: 300000, cacheWriteTokens: 50000, outputTokens: 800000 },
   sessionStats: { steps: 10, turns: 4 }
 };
 ReactStub.__reset();
 ReactStub.__beginRender();
-const pillEl = pill({ t, useProjection: (k) => PROJECTION_VALUES[k] });
-assert.strictEqual(pillEl.type, "span");
-assert.strictEqual(pillEl.props.className, "scst_anchor");
-const pillBtn = findAll(pillEl, (n) => n.type === "button" && n.props.className === "scst_pill");
-assert.strictEqual(pillBtn.length, 1, "one pill button");
-const btn = pillBtn[0];
-assert.strictEqual(btn.props["aria-expanded"], false, "dialog closed initially");
-assert.strictEqual(typeof btn.props.onClick, "function", "onClick toggle present");
-assert.strictEqual(texts(btn).filter((x) => typeof x === "string").join(" "), "15.84", "label is the bare number; the ¥ glyph is the icon");
+pillEl = pill({ t, useProjection: (k) => PROJECTION_VALUES[k] });
+assert.strictEqual(texts(findAll(pillEl, (n) => n.type === "button")[0]).filter((x) => typeof x === "string").join(" "), "15.84", "label is the bare number; the ¥ glyph is the icon");
 const closedPortals = findAll(pillEl, (n) => n.type === "__portal");
 assert.strictEqual(closedPortals.length, 0, "no portal while closed");
-console.log("pill OK: label 15.84, closed, no portal");
+console.log("pill OK: label 15.84 from the settings document, closed, no portal");
+
+// --- live edit in the document re-renders the mounted pill (no restart) ---
+formCtrl.mutate([{ op: "set", path: ["priceOutput"], value: 10 }]);
+ReactStub.__beginRender();
+pillEl = pill({ t, useProjection: (k) => PROJECTION_VALUES[k] });
+assert.strictEqual(texts(findAll(pillEl, (n) => n.type === "button")[0]).filter((x) => typeof x === "string").join(" "), "11.84", "output 800k @10 → total 3.75 + 0.09 + 8.00");
+console.log("pill OK: live settings edit 15.84 → 11.84");
 
 // --- unmeasured session: dash label, still clickable ---
 PROJECTION_VALUES.sessionStats = { steps: 0, turns: 0 };
@@ -302,7 +484,7 @@ const btn2 = findAll(pillEl2, (n) => n.type === "button")[0];
 assert.strictEqual(texts(btn2).filter((x) => typeof x === "string").join(" "), "—");
 console.log("pill unmeasured OK: —");
 
-// --- open the dialog: click → portal with the four rows in the requested order ---
+// --- open the dialog: click → portal with the rows in the requested order ---
 PROJECTION_VALUES.sessionStats = { steps: 10, turns: 4 };
 ReactStub.__reset();
 ReactStub.__beginRender();
@@ -324,7 +506,7 @@ assert.deepStrictEqual(panel.props.style, { visibility: "hidden", left: 0, top: 
 const dts = cellTexts(panel, "dt");
 const dds = cellTexts(panel, "dd");
 assert.deepStrictEqual(dts, ["输入（缓存）", "输入（未缓存）", "输出", "总成本"], "row order: cached, uncached, output, total");
-assert.deepStrictEqual(dds, ["¥ 0.09 · 300.0k", "¥ 3.75 · 1.25M", "¥ 12.00 · 800.0k", "¥ 15.84"], "row values: live cost · actual usage, dot-separated");
+assert.deepStrictEqual(dds, ["¥ 0.09 · 300.0k", "¥ 3.75 · 1.25M", "¥ 8.00 · 800.0k", "¥ 11.84"], "row values: live cost · actual usage, dot-separated, at the live prices");
 console.log("dialog open OK:", dts.map((x, i) => `${x}=${dds[i]}`).join(" | "));
 
 // --- Escape closes the dialog ---
@@ -344,8 +526,7 @@ let pillEl5 = pill({ t, useProjection: (k) => PROJECTION_VALUES[k] });
 findAll(pillEl5, (n) => n.type === "button")[0].props.onClick();
 ReactStub.__beginRender();
 pillEl5 = pill({ t, useProjection: (k) => PROJECTION_VALUES[k] });
-const span5 = pillEl5; // root span owns rootRef
-const rootRef = span5.props.ref;
+const rootRef = pillEl5.props.ref;
 const panel5 = findAll(pillEl5, (n) => n.type === "__portal")[0].children[0];
 const panelRef = panel5.props.ref;
 // Wire refs like React would after commit: each contains only its own node.
@@ -363,8 +544,12 @@ pillEl6 = pill({ t, useProjection: (k) => PROJECTION_VALUES[k] });
 assert.strictEqual(findAll(pillEl6, (n) => n.type === "__portal").length, 0, "outside click closed the dialog");
 console.log("outside-click OK: inside kept open, outside closed");
 
-// --- partial prices in the pill: total sums priced rows only ---
-store.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "", cache: "", output: "2.5" }));
+// --- partial prices in the document: total sums priced rows only ---
+formCtrl.mutate([
+  { op: "unset", path: ["priceInput"] },
+  { op: "unset", path: ["priceCache"] },
+  { op: "set", path: ["priceOutput"], value: 2.5 }
+]);
 PROJECTION_VALUES.tokenUsage = { uncachedInputTokens: 1000, cacheReadTokens: 2000, cacheWriteTokens: 100, outputTokens: 4000 };
 PROJECTION_VALUES.sessionStats = { steps: 1, turns: 1 };
 ReactStub.__reset();
@@ -379,7 +564,7 @@ assert.deepStrictEqual(cellTexts(panel8, "dd"), ["— · 2000", "— · 1100", "
 console.log("partial-price pill OK: 0.01, rows [— · 2000, — · 1100, ¥ 0.01 · 4000, ¥ 0.01]");
 
 // --- unpriced at all: pill dash, dialog dashes, total dash ---
-store.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "", cache: "", output: "" }));
+formCtrl.mutate([{ op: "unset", path: ["priceOutput"] }]);
 ReactStub.__reset();
 ReactStub.__beginRender();
 const pillEl9 = pill({ t, useProjection: (k) => PROJECTION_VALUES[k] });
@@ -414,7 +599,11 @@ function renderChip(snapshot, messageId) {
 }
 
 // --- priced turn: input 100k @3 + output 100k @15 → 0.30 + 1.50 = 1.80 ---
-store.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "3", cache: "0.3", output: "15" }));
+formCtrl.mutate([
+  { op: "set", path: ["priceInput"], value: 3 },
+  { op: "set", path: ["priceCache"], value: 0.3 },
+  { op: "set", path: ["priceOutput"], value: 15 }
+]);
 const snapshot1 = makeChatSnapshot([
   { kind: "turn-tail", data: { turn: 1, closing: { finalNode: { messageId: "m1" } }, tokenUsage: { uncachedInputTokens: 100000, cacheReadTokens: 50000, cacheWriteTokens: 10000, outputTokens: 100000 } } },
   { kind: "turn-tail", data: { turn: 2, closing: { finalNode: { messageId: "m2" } }, tokenUsage: { uncachedInputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 1 } } }
@@ -449,7 +638,6 @@ console.log("turn chip OK: no tokenUsage → null");
 
 // --- bucket without the OPTIONAL cache fields (the live bug: NaN → "¥—") ---
 // cacheReadTokens / cacheWriteTokens are only attached when provable per step.
-store.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "3", cache: "0.3", output: "15" }));
 const snapshot4 = makeChatSnapshot([
   { kind: "turn-tail", data: { turn: 1, closing: { finalNode: { messageId: "m1" } }, tokenUsage: { uncachedInputTokens: 100000, outputTokens: 100000, totalTokens: 200000 } } }
 ]);
@@ -468,17 +656,76 @@ assert.strictEqual(chip7Text, "2.10", `missing cacheRead must not NaN, got "${ch
 console.log("turn chip OK: no cacheRead →", chip7Text);
 
 // --- partial prices (output only) → sums priced parts: 1.50 ---
-store.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "", cache: "", output: "15" }));
+formCtrl.mutate([
+  { op: "unset", path: ["priceInput"] },
+  { op: "unset", path: ["priceCache"] },
+  { op: "set", path: ["priceOutput"], value: 15 }
+]);
 const chip4 = renderChip(snapshot1, "m1");
 const chip4Text = texts(chip4).filter((x) => typeof x === "string").join(" ");
 assert.strictEqual(chip4Text, "1.50", `partial-price total, got "${chip4Text}"`);
 console.log("turn chip OK: partial prices →", chip4Text);
 
 // --- unpriced at all → dash label ---
-store.setItem("dsh.stats.costPrices.v1", JSON.stringify({ input: "", cache: "", output: "" }));
+formCtrl.mutate([{ op: "unset", path: ["priceOutput"] }]);
 const chip5 = renderChip(snapshot1, "m1");
 const chip5Text = texts(chip5).filter((x) => typeof x === "string").join(" ");
 assert.strictEqual(chip5Text, "—", `unpriced total, got "${chip5Text}"`);
 console.log("turn chip OK: unpriced → —");
+
+// ==================================================================
+// Gating: no served namespace → no settings page, unpriced pill
+// ==================================================================
+{
+  const fresh = loaded.factory((id) => {
+    if (id === "react-dom") return { createPortal: createPortalStub };
+    if (id === "@deepseek-ai/dsh-client-ui-primitives") return primitivesStub;
+    return ReactStub;
+  });
+  const effects2 = [];
+  const injected2 = [];
+  const ctx2 = {
+    effects: effects2,
+    effect: (fn, label) => { const c = fn(); effects2.push({ label, cleanup: c }); return () => c?.(); },
+    locale: {
+      registered: new Map(),
+      register(ns, dicts) {
+        this.registered.set(ns, dicts);
+        return () => this.registered.delete(ns);
+      },
+      bind: () => (key) => key
+    },
+    slots: {
+      injected: injected2,
+      inject: (key, fn) => { injected2.push({ key, fn }); },
+      register: (options, component) => ({ options, component })
+    },
+    configForms: {
+      get: () => makeFormController(SETTINGS_NS),
+      whileServed: (namespaces, register) => {
+        const served = new Set(namespaces.filter((ns) => formSnapshots[ns] !== undefined));
+        let off;
+        if (served.size > 0) off = register(served);
+        return () => { off?.(); };
+      }
+    }
+  };
+  delete formSnapshots[SETTINGS_NS]; // the Host does not serve the namespace
+  fresh.apply(ctx2);
+  assert.strictEqual(injected2.find((e) => e.key === "plugins.row.config"), undefined, "no settings page without a served namespace");
+  assert.ok(injected2.find((e) => e.key === "conversation.composer.dock"), "dock pill still registers");
+  assert.ok(injected2.find((e) => e.key === "conversation.chat.assistant-actions"), "turn chip still registers");
+  ReactStub.__reset();
+  ReactStub.__beginRender();
+  const pillFresh = injected2.find((e) => e.key === "conversation.composer.dock").fn().component;
+  const elFresh = pillFresh({ t: (k) => dicts.zh[k] ?? k, useProjection: () => void 0 });
+  assert.strictEqual(texts(findAll(elFresh, (n) => n.type === "button")[0]).filter((x) => typeof x === "string").join(" "), "—", "unpriced pill without a served namespace");
+  console.log("gating OK: no served namespace → no settings page, unpriced pill");
+}
+
+// --- teardown: the remaining effects clean up (bridge unsubscribes, form model disposes) ---
+for (const e of [...ctx.effects]) e.cleanup();
+assert.strictEqual(controllers.get(SETTINGS_NS).listeners.size, 0, "price bridge unsubscribed on teardown");
+console.log("teardown OK: form disposed, bridge unsubscribed");
 
 console.log("\nALL SMOKE TESTS PASSED");

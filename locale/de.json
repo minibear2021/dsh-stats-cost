@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Gesprächskosten",
-    "description": "Fügt den Gesprächsansichten einen Kosten-Tab hinzu: Preise pro Million Tokens (nicht gecachte Eingabe, gecachte Eingabe, Ausgabe) festlegen und die Kosten dieses Gesprächs anzeigen."
+    "description": "Legen Sie im Plugin-Manager Preise pro Million Tokens (nicht gecachte Eingabe, gecachte Eingabe, Ausgabe) fest und sehen Sie die Tokenkosten dieses Gesprächs in der Composer-Leiste und je Turn."
   }
 }
