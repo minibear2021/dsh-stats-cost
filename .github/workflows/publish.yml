@@ -33,6 +33,11 @@ jobs:
   publish:
     needs: test
     runs-on: ubuntu-latest
+    # Must match the "Environment name" configured under npm →
+    # Trusted publishing for this package. Add protection rules under
+    # repo Settings → Environments to gate who can trigger it.
+    environment:
+      name: npm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
