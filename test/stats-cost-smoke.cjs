@@ -52,7 +52,7 @@ global.window = {
 
 eval(code);
 assert.ok(loaded, "module was not registered");
-assert.strictEqual(loaded.id, "@local/stats-cost");
+assert.strictEqual(loaded.id, "@minibear/dsh-stats-cost");
 
 // --- stub React: hook state persists across renders (like the real one) ---
 let stateStore = [];
@@ -295,12 +295,12 @@ const turnEntry = ctxSlotInjected.find((e) => e.key === "conversation.chat.assis
 assert.ok(bundleEntry && rowEntry && dockEntry && turnEntry, "all four slots injected");
 const bundleReg = bundleEntry.fn();
 assert.strictEqual(bundleReg.options.name, "plugins.bundle.config");
-assert.strictEqual(bundleReg.options.key, "@local/stats-cost", "bundle config key = package name → section on the bundle detail page");
+assert.strictEqual(bundleReg.options.key, "@minibear/dsh-stats-cost", "bundle config key = package name → section on the bundle detail page");
 assert.strictEqual(bundleReg.options.locale, "statsCost");
 assert.strictEqual(bundleReg.component, rowEntry.fn().component, "one card serves both the bundle section and the row page");
 const rowReg = rowEntry.fn();
 assert.strictEqual(rowReg.options.name, "plugins.row.config");
-assert.strictEqual(rowReg.options.key, "@local/stats-cost#stats-cost", "row config key = pkg#rowId");
+assert.strictEqual(rowReg.options.key, "@minibear/dsh-stats-cost#stats-cost", "row config key = pkg#rowId");
 assert.strictEqual(rowReg.options.locale, "statsCost");
 assert.ok(rowReg.component, "row config component present");
 const face = rowReg.options.inject();
@@ -321,7 +321,7 @@ assert.strictEqual(turnReg.options.id, "cost");
 assert.strictEqual(turnReg.options.order, 20, "turn order 20 → after shipped feedback (10), inside the usage row");
 assert.ok(turnReg.component, "turn chip component present");
 assert.notStrictEqual(turnReg.component, dockReg.component, "turn chip distinct from dock pill");
-console.log("slots OK: bundle.config @local/stats-cost + row.config @local/stats-cost#stats-cost + dock id=cost order=2 + assistant-actions id=cost order=20 (no conversation.view)");
+console.log("slots OK: bundle.config @minibear/dsh-stats-cost + row.config @minibear/dsh-stats-cost#stats-cost + dock id=cost order=2 + assistant-actions id=cost order=20 (no conversation.view)");
 
 // --- effects registered: dictionaries, styles, form subscription, price bridge, settings page ---
 assert.strictEqual(ctx.effects.length, 5, `effects: ${ctx.effects.map((e) => e.label)}`);
@@ -341,7 +341,7 @@ assert.ok(styleTags[0].textContent.includes("scst_writeHint"), "settings write-h
 // survive into the pill/card sections below (the real runtime tears every
 // effect down at the very end, verified after the last section).
 for (const e of [...ctx.effects]) if (e.label === "stats-cost: styles") e.cleanup();
-assert.strictEqual(global.document.querySelector(`style[data-plugin-css="@local/stats-cost/cost.css"]`), null);
+assert.strictEqual(global.document.querySelector(`style[data-plugin-css="@minibear/dsh-stats-cost/cost.css"]`), null);
 console.log("effects OK: 5 effects, style tag removed on cleanup");
 
 // --- helpers ---

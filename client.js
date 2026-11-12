@@ -1,5 +1,8 @@
+// The package name: the module id, the style tag's id, and the
+// plugin-manager ledger keys all derive from it.
+const PACKAGE_NAME = '@minibear/dsh-stats-cost';
 window.__ModuleLoader__.load({
-  id: '@local/stats-cost',
+  id: PACKAGE_NAME,
   factory(require) {
     const React = require('react');
     const createPortal = require('react-dom').createPortal;
@@ -15,12 +18,12 @@ window.__ModuleLoader__.load({
     } = require('@deepseek-ai/dsh-client-ui-primitives');
     const NS = 'statsCost';
     // The settings namespace this plugin's host Config registers (the
-    // profile entry id), and the plugin-manager ledger keys: the bundle's
-    // own config section (rendered on the bundle's detail page) and the
-    // row's configure control.
+    // profile entry id), and the plugin-manager ledger keys derived from
+    // the package name: the bundle's own config section (rendered on the
+    // bundle's detail page) and the row's configure control.
     const SETTINGS_NS = 'stats-cost';
-    const BUNDLE_CONFIG_KEY = '@local/stats-cost';
-    const ROW_CONFIG_KEY = '@local/stats-cost#stats-cost';
+    const BUNDLE_CONFIG_KEY = PACKAGE_NAME;
+    const ROW_CONFIG_KEY = `${PACKAGE_NAME}#${SETTINGS_NS}`;
     const CURRENCY = '¥';
 
     // ------------------------------------------------------------------
@@ -611,7 +614,7 @@ window.__ModuleLoader__.load({
     // Plugin body.
     // ------------------------------------------------------------------
     function injectStyle() {
-      const tagId = '@local/stats-cost/cost.css';
+      const tagId = `${PACKAGE_NAME}/cost.css`;
       let tag = document.querySelector(`style[data-plugin-css="${tagId}"]`);
       if (tag === null) {
         tag = document.createElement('style');

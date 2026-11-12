@@ -1,4 +1,4 @@
-// @local/stats-cost host half: declares this plugin's unit-price settings.
+// @minibear/dsh-stats-cost host half: declares this plugin's unit-price settings.
 // The three fields are volatile: the plugin manager can edit them at runtime
 // without restarting the plugin, and the browser half observes the settings
 // document through the shared settings service (configForms).

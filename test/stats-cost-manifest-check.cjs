@@ -5,7 +5,9 @@ process.chdir(dir);
 const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
 
 console.log("name:", pkg.name);
-if (!/^@local\//.test(pkg.name)) throw new Error("expected @local scope");
+if (!/^@minibear\//.test(pkg.name)) throw new Error("expected @minibear scope");
+if (pkg.private === true) throw new Error("package must not be private (it is published)");
+if (!pkg.publishConfig || pkg.publishConfig.access !== "public") throw new Error("publishConfig.access must be public for a scoped package");
 
 for (const [key, target] of Object.entries(pkg.exports)) {
   if (!target.includes("*")) {
@@ -48,7 +50,15 @@ console.log("client.immediately:", client.immediately === undefined ? "(absent â
 
 const patch = pkg.dsh.bundle.patch;
 if (!fs.existsSync(patch)) throw new Error("missing " + patch);
-console.log("patch OK:", patch);
+// The Host resolves the client half by the patch row's name, which must
+// equal the package name (module id, style tag, and ledger keys derive
+// from it).
+const patchYaml = fs.readFileSync(patch, "utf8");
+const nameMatch = patchYaml.match(/^\s*name:\s*['"]?([^'"\n]+?)['"]?\s*$/m);
+if (!nameMatch || nameMatch[1] !== pkg.name) {
+  throw new Error("patch row name must equal the package name (got " + (nameMatch && nameMatch[1]) + " vs " + pkg.name + ")");
+}
+console.log("patch OK:", patch, "row name = package name");
 
 const iconBytes = fs.statSync("icon.svg").size;
 if (iconBytes > 256 * 1024) throw new Error("icon too big");
