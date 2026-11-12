@@ -263,15 +263,16 @@ clientModule.apply(ctx);
 // --- the form was obtained for the plugin's settings namespace ---
 assert.deepStrictEqual([...controllers.keys()], [SETTINGS_NS], "configForms.get('stats-cost')");
 
-// --- locale dictionaries: 8 locales, identical key sets, zh has 21 keys ---
+// --- locale dictionaries: 8 locales, identical key sets, zh has 22 keys ---
 const dicts = ctx.locale.registered.get("statsCost");
 assert.ok(dicts, "statsCost namespace registered");
 assert.deepStrictEqual(Object.keys(dicts).sort(), ["de", "en", "es", "fr", "ja", "pt", "ru", "zh"]);
 const zhKeys = Object.keys(dicts.zh).sort();
-assert.strictEqual(zhKeys.length, 21, `zh key count ${zhKeys.length}`);
+assert.strictEqual(zhKeys.length, 22, `zh key count ${zhKeys.length}`);
 assert.ok(dicts.zh["dock.cost"], "dock.cost present");
 assert.ok(dicts.zh["dialog.cost"], "dialog.cost present");
 assert.strictEqual(dicts.zh["turn.title"], "本轮成本", "turn.title present");
+assert.ok(dicts.zh["settings.title"], "settings.title present");
 assert.ok(dicts.zh["settings.description"], "settings.description present");
 assert.ok(dicts.zh["settings.writeHint"], "settings.writeHint present");
 assert.ok(!dicts.zh["view.cost"], "view.cost key removed with the Cost tab");
@@ -282,15 +283,21 @@ for (const [lang, d] of Object.entries(dicts)) {
     assert.ok(v.length > 0, `${lang}.${k} empty`);
   }
 }
-console.log("locale OK: 8 locales × 21 keys");
+console.log("locale OK: 8 locales × 22 keys");
 
-// --- slot registration: NO conversation.view; plugins.row.config + dock + assistant-actions ---
-assert.strictEqual(ctx.slots.injected.length, 3, `injected: ${ctx.slots.injected.map((e) => e.key)}`);
+// --- slot registration: NO conversation.view; bundle.config + row.config + dock + assistant-actions ---
+assert.strictEqual(ctx.slots.injected.length, 4, `injected: ${ctx.slots.injected.map((e) => e.key)}`);
 assert.strictEqual(ctxSlotInjected.find((e) => e.key === "conversation.view"), undefined, "conversation.view (Cost tab) removed");
+const bundleEntry = ctxSlotInjected.find((e) => e.key === "plugins.bundle.config");
 const rowEntry = ctxSlotInjected.find((e) => e.key === "plugins.row.config");
 const dockEntry = ctxSlotInjected.find((e) => e.key === "conversation.composer.dock");
 const turnEntry = ctxSlotInjected.find((e) => e.key === "conversation.chat.assistant-actions");
-assert.ok(rowEntry && dockEntry && turnEntry, "all three slots injected");
+assert.ok(bundleEntry && rowEntry && dockEntry && turnEntry, "all four slots injected");
+const bundleReg = bundleEntry.fn();
+assert.strictEqual(bundleReg.options.name, "plugins.bundle.config");
+assert.strictEqual(bundleReg.options.key, "@local/stats-cost", "bundle config key = package name → section on the bundle detail page");
+assert.strictEqual(bundleReg.options.locale, "statsCost");
+assert.strictEqual(bundleReg.component, rowEntry.fn().component, "one card serves both the bundle section and the row page");
 const rowReg = rowEntry.fn();
 assert.strictEqual(rowReg.options.name, "plugins.row.config");
 assert.strictEqual(rowReg.options.key, "@local/stats-cost#stats-cost", "row config key = pkg#rowId");
@@ -314,7 +321,7 @@ assert.strictEqual(turnReg.options.id, "cost");
 assert.strictEqual(turnReg.options.order, 20, "turn order 20 → after shipped feedback (10), inside the usage row");
 assert.ok(turnReg.component, "turn chip component present");
 assert.notStrictEqual(turnReg.component, dockReg.component, "turn chip distinct from dock pill");
-console.log("slots OK: row.config @local/stats-cost#stats-cost + dock id=cost order=2 + assistant-actions id=cost order=20 (no conversation.view)");
+console.log("slots OK: bundle.config @local/stats-cost + row.config @local/stats-cost#stats-cost + dock id=cost order=2 + assistant-actions id=cost order=20 (no conversation.view)");
 
 // --- effects registered: dictionaries, styles, form subscription, price bridge, settings page ---
 assert.strictEqual(ctx.effects.length, 5, `effects: ${ctx.effects.map((e) => e.label)}`);
@@ -362,7 +369,7 @@ function cellTexts(el, tag) {
 let PROJECTION_VALUES = {};
 
 // ==================================================================
-// Plugin-manager settings card (plugins.row.config)
+// Plugin-manager settings card (plugins.bundle.config + plugins.row.config)
 // ==================================================================
 const card = rowReg.component;
 const useCostConfig = (selector) => selector(face.hooks.costConfig.getSnapshot());
@@ -407,7 +414,10 @@ assert.strictEqual(fieldEls[0].props.value, "3", "current value from the setting
 assert.strictEqual(fieldEls[1].props.value, "0.3");
 assert.strictEqual(fieldEls[2].props.value, "15");
 assert.ok(cardEl.children.some((c) => c.type === "p" && c.props.className === "scst_writeHint"), "billing note under the fields");
-console.log("card page OK: SettingsForm with 3 numeric fields + write hint");
+const heading = cardEl.children.find((c) => c.type === "p" && c.props.className === "scst_configHeading");
+assert.ok(heading, "section heading above the fields (bundle detail page has no other heading)");
+assert.deepStrictEqual(heading.children, ["单价设置"], "heading copy from the dictionary");
+console.log("card page OK: SettingsForm with 3 numeric fields + heading + write hint");
 
 // --- editing a field stages the value into the form model ---
 fieldEls[0].props.onEdit("12");
@@ -712,7 +722,8 @@ console.log("turn chip OK: unpriced → —");
   };
   delete formSnapshots[SETTINGS_NS]; // the Host does not serve the namespace
   fresh.apply(ctx2);
-  assert.strictEqual(injected2.find((e) => e.key === "plugins.row.config"), undefined, "no settings page without a served namespace");
+  assert.strictEqual(injected2.find((e) => e.key === "plugins.bundle.config"), undefined, "no bundle config section without a served namespace");
+  assert.strictEqual(injected2.find((e) => e.key === "plugins.row.config"), undefined, "no row config without a served namespace");
   assert.ok(injected2.find((e) => e.key === "conversation.composer.dock"), "dock pill still registers");
   assert.ok(injected2.find((e) => e.key === "conversation.chat.assistant-actions"), "turn chip still registers");
   ReactStub.__reset();

@@ -15,8 +15,11 @@ window.__ModuleLoader__.load({
     } = require('@deepseek-ai/dsh-client-ui-primitives');
     const NS = 'statsCost';
     // The settings namespace this plugin's host Config registers (the
-    // profile entry id), and the plugin-manager key of this bundle row.
+    // profile entry id), and the plugin-manager ledger keys: the bundle's
+    // own config section (rendered on the bundle's detail page) and the
+    // row's configure control.
     const SETTINGS_NS = 'stats-cost';
+    const BUNDLE_CONFIG_KEY = '@local/stats-cost';
     const ROW_CONFIG_KEY = '@local/stats-cost#stats-cost';
     const CURRENCY = '¥';
 
@@ -36,6 +39,7 @@ window.__ModuleLoader__.load({
       'usage.total': '总成本',
       'na': '—',
       'settings.description': '设置每百万 token 的单价，用于对话中的成本统计。',
+      'settings.title': '单价设置',
       'settings.writeHint': '缓存写入按未缓存输入的单价计费。',
       'settings.unavailable': '该插件当前未加载，暂时无法配置。',
       'settings.readOnly': '本部署的设置为只读。',
@@ -59,6 +63,7 @@ window.__ModuleLoader__.load({
       'usage.total': 'Total cost',
       'na': '—',
       'settings.description': 'Set the per-million-token prices used by the in-conversation cost statistics.',
+      'settings.title': 'Unit prices',
       'settings.writeHint': 'Cache writes are billed at the uncached input price.',
       'settings.unavailable': 'This plugin is not loaded, so it cannot be configured right now.',
       'settings.readOnly': 'This deployment stores settings read-only.',
@@ -82,6 +87,7 @@ window.__ModuleLoader__.load({
       'usage.total': '合計コスト',
       'na': '—',
       'settings.description': '会話内のコスト統計で使う、100万トークンあたりの料金を設定します。',
+      'settings.title': '単価の設定',
       'settings.writeHint': 'キャッシュ書き込みは非キャッシュ入力の単価で計算します。',
       'settings.unavailable': 'このプラグインは読み込まれていないため、現在設定できません。',
       'settings.readOnly': 'このデプロイでは設定が読み取り専用で保存されます。',
@@ -105,6 +111,7 @@ window.__ModuleLoader__.load({
       'usage.total': 'Gesamtkosten',
       'na': '—',
       'settings.description': 'Legt die Preise pro Million Tokens fest, die die Kostenstatistik im Gespräch verwendet.',
+      'settings.title': 'Stückpreise',
       'settings.writeHint': 'Cache-Writes werden zum Preis der nicht gecachten Eingabe berechnet.',
       'settings.unavailable': 'Dieses Plugin ist nicht geladen und kann daher derzeit nicht konfiguriert werden.',
       'settings.readOnly': 'Diese Bereitstellung speichert Einstellungen schreibgeschützt.',
@@ -128,6 +135,7 @@ window.__ModuleLoader__.load({
       'usage.total': 'Coste total',
       'na': '—',
       'settings.description': 'Fije los precios por millón de tokens que usan las estadísticas de coste de la conversación.',
+      'settings.title': 'Precios unitarios',
       'settings.writeHint': 'Las escrituras en caché se facturan al precio de entrada sin caché.',
       'settings.unavailable': 'Este complemento no está cargado, por lo que no se puede configurar en este momento.',
       'settings.readOnly': 'Esta implementación almacena configuraciones de solo lectura.',
@@ -151,6 +159,7 @@ window.__ModuleLoader__.load({
       'usage.total': 'Coût total',
       'na': '—',
       'settings.description': 'Fixez les tarifs par million de jetons utilisés par la statistique de coût de la conversation.',
+      'settings.title': 'Prix unitaires',
       'settings.writeHint': "Les écritures en cache sont facturées au tarif d'entrée non en cache.",
       'settings.unavailable': "Ce plugin n'est pas chargé, il ne peut donc pas être configuré pour le moment.",
       'settings.readOnly': 'Ce déploiement stocke les paramètres en lecture seule.',
@@ -174,6 +183,7 @@ window.__ModuleLoader__.load({
       'usage.total': 'Custo total',
       'na': '—',
       'settings.description': 'Defina os preços por milhão de tokens usados pelas estatísticas de custo da conversa.',
+      'settings.title': 'Preços unitários',
       'settings.writeHint': 'Escrituras em cache são cobradas pelo preço de entrada sem cache.',
       'settings.unavailable': 'Este plugin não está carregado, portanto não pode ser configurado agora.',
       'settings.readOnly': 'Esta implantação armazena configurações somente leitura.',
@@ -197,6 +207,7 @@ window.__ModuleLoader__.load({
       'usage.total': 'Итоговая стоимость',
       'na': '—',
       'settings.description': 'Установите цены за миллион токенов для статистики стоимости в беседе.',
+      'settings.title': 'Единичные цены',
       'settings.writeHint': 'Записи в кэш тарифицируются по цене входа без кэша.',
       'settings.unavailable': 'Этот плагин не загружен, поэтому его невозможно настроить прямо сейчас.',
       'settings.readOnly': 'В этом развертывании параметры сохраняются только для чтения.',
@@ -243,7 +254,9 @@ window.__ModuleLoader__.load({
       '.scst_details dt,.scst_details dd{min-width:0;margin:0}',
       '.scst_details dd{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;text-align:right}',
       '.scst_totalValue{color:var(--dsw-alias-brand-primary);font-weight:500}',
-      // Plugin-manager settings form: the billing note under the three prices.
+      // Plugin-manager settings form: the section heading and the billing
+      // note under the three prices.
+      '.scst_configHeading{margin:0 0 6px;font-weight:500;color:var(--dsw-alias-label-primary)}',
       '.scst_writeHint{margin:4px 0 0;font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}'
     ].join('\n');
 
@@ -319,8 +332,10 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     // Plugin-manager settings form: the three unit prices over the
     // `stats-cost` settings namespace the host half declares. The card
-    // renders the shared settings form on the bundle row's page
-    // (plugins.row.config) and its one-liner in the summary view.
+    // renders the shared settings form in the bundle's own config section
+    // (plugins.bundle.config, shown on the bundle's detail page) and in
+    // the row's configure page (plugins.row.config); the summary view
+    // contributes its one-liner.
     // ------------------------------------------------------------------
     /** Staged form over this plugin's settings namespace (shell-companion pattern). */
     class CostConfigController {
@@ -362,6 +377,7 @@ window.__ModuleLoader__.load({
         onSave: props.save,
         onDiscard: props.discard
       },
+        h('p', { className: 'scst_configHeading' }, t('settings.title')),
         h(SettingsValueField, {
           id: 'stats-cost-price-input',
           label: t('price.input'),
@@ -633,14 +649,23 @@ window.__ModuleLoader__.load({
         return form.subscribe(() => syncPricesFromSettings(form));
       }, 'stats-cost: price bridge');
 
-      // The settings form on the plugin manager's row page, contributed
-      // while the Host serves this plugin's settings namespace.
-      ctx.effect(() => ctx.configForms.whileServed([SETTINGS_NS], () => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
-        name: 'plugins.row.config',
-        key: ROW_CONFIG_KEY,
-        locale: NS,
-        inject: () => controller.inject()
-      }, CostConfigCard))), 'stats-cost: settings page');
+      // The settings form, contributed while the Host serves this plugin's
+      // settings namespace: the bundle's own config section on its detail
+      // page, plus the row's configure control and page.
+      ctx.effect(() => ctx.configForms.whileServed([SETTINGS_NS], () => {
+        ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+          name: 'plugins.bundle.config',
+          key: BUNDLE_CONFIG_KEY,
+          locale: NS,
+          inject: () => controller.inject()
+        }, CostConfigCard));
+        ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+          name: 'plugins.row.config',
+          key: ROW_CONFIG_KEY,
+          locale: NS,
+          inject: () => controller.inject()
+        }, CostConfigCard));
+      }), 'stats-cost: settings page');
 
       ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
         name: 'conversation.composer.dock',
