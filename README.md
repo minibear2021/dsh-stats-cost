@@ -1,76 +1,35 @@
 # @minibear/dsh-stats-cost
 
-Conversation cost statistics for DeepSeek Harness. A plugin that shows what your conversation is costing, per turn and in total.
+DeepSeek Harness 的对话成本统计插件。设置模型单价后，实时看到对话花了多少钱——整段对话的总花费显示在输入框下方的状态栏，每一轮回复的花费显示在该轮末尾的标签上。
 
-## What it does
+其他语言 / Other languages: [English](./README.en.md)
 
-Once you enter your model prices:
+## 功能
 
-- The status bar under the composer shows the **total cost of the whole conversation**.
-- The end of each reply shows a chip with **what that turn cost**.
-- Values update live while you work — no restart, no page reload.
-- Until prices are set (or for a part of the usage that has no price), the cost shows as `—`.
+- 状态栏显示**整段对话的总花费**
+- 每轮回复末尾显示**该轮的花费**
+- 填写或修改单价后**实时更新**，无需重启或刷新页面
+- 未设置单价（或某部分用量没有对应单价）时显示 `—`
+- 界面跟随 Harness 语言（8 种语言：zh, en, ja, de, es, fr, pt, ru）
 
-The interface follows the Harness language (8 locales: zh, en, ja, de, es, fr, pt, ru).
+## 环境要求
 
-## Requirements
+- 内置插件管理器（Cordis bundle 支持）的 DeepSeek Harness (dsh) 版本
+- 唯一的运行时依赖 `@deepseek-ai/schemastery`（~3.19.0）会从 npm 自动安装
 
-- A DeepSeek Harness (dsh) build with the built-in plugin manager (Cordis bundle support).
-- The one runtime dependency, `@deepseek-ai/schemastery` (~3.19.0), is installed from npm automatically.
+## 安装
 
-## Install
-
-Recommended: in DeepSeek Harness, open **Plugins** (the plugin manager) → install a bundle from npm, and enter
+推荐方式：打开 DeepSeek Harness 的**插件管理器**，从 npm 安装 bundle，填入
 
 ```
 @minibear/dsh-stats-cost
 ```
 
-Then open the bundle's detail page to configure prices.
+然后打开该插件的详情页配置单价。
 
-## Configure
+## 配置
 
-On the plugin's detail page, the **Model prices** section has three fields. All prices are **per 1,000,000 tokens** of the model you use:
-
-| Field | Meaning |
-| --- | --- |
-| Input (uncached) | Price of new input tokens |
-| Cache read | Price of tokens read from the prompt cache |
-| Output | Price of generated tokens |
-
-Notes:
-
-- Tokens **written** to the prompt cache are billed at the *input (uncached)* price.
-- Leaving a field empty disables that part of the total; the plugin sums only the priced parts.
-- Saving writes the values to the host's plugin configuration; the status bar and the turn chips update immediately.
-
-## Cost model
-
-```
-cost = ( (uncached input + cache write) × input price
-      +  cache read × cache read price
-      +  output × output price ) ÷ 1,000,000
-```
-
-## Package contents
-
-| File | Role |
-| --- | --- |
-| `index.js` | Host half: declares the three volatile price settings |
-| `client.js` | Client half: status-bar pill, per-turn chip, price form in the plugin manager |
-| `cordis.patch.yml` | Bundle patch that wires the host and client halves together |
-| `locale/*.json` | UI strings, 8 languages |
-| `icon.svg` | Bundle icon shown in the plugin manager |
-
----
-
-# 中文说明
-
-DeepSeek Harness 的对话成本统计插件：设置模型单价后，输入框下方的状态栏显示整段对话的总花费，每轮回复末尾显示该轮花费。
-
-**安装**：在插件管理器中从 npm 安装 bundle，填入 `@minibear/dsh-stats-cost`。
-
-**配置**：打开插件详情页，在「模型单价」一栏填写单价（均按每 100 万 token 计）：
+插件详情页的**模型单价**一栏有三个字段，单价均按**每 100 万 token** 计：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -78,14 +37,24 @@ DeepSeek Harness 的对话成本统计插件：设置模型单价后，输入框
 | 缓存读取 | 从提示缓存读取的 token 单价 |
 | 输出 | 生成 token 的单价 |
 
-- 写入缓存的 token 按「输入（未缓存）」单价计费。
-- 留空的字段不参与合计；保存后状态栏与每轮标签立即更新，无需重启。
-- 未设置单价时显示 `—`。
+- 写入缓存的 token 按「输入（未缓存）」单价计费
+- 留空的字段不参与合计，只汇总已设置单价的部分
+- 保存写入宿主的插件配置，状态栏和每轮标签立即更新
 
-**计费公式**：
+## 计费公式
 
 ```
 费用 = ( (未缓存输入 + 缓存写入) × 输入单价
       +  缓存读取 × 缓存单价
       +  输出 × 输出单价 ) ÷ 1000000
 ```
+
+## 包内容
+
+| 文件 | 作用 |
+| --- | --- |
+| `index.js` | 宿主部分：声明三个可热更新的单价设置 |
+| `client.js` | 客户端部分：状态栏胶囊、每轮标签、插件管理器里的单价表单 |
+| `cordis.patch.yml` | 连接宿主与客户端两部分的 bundle 补丁 |
+| `locale/*.json` | 界面文案，8 种语言 |
+| `icon.svg` | 插件管理器中显示的图标 |
