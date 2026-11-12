@@ -66,10 +66,15 @@ jobs:
         run: npm pack --dry-run
       - name: Publish
         if: steps.version.outputs.changed == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # With the NPM_TOKEN secret set, that token authenticates.
-          # Without it, npm uses the GitHub OIDC identity (trusted publishing).
-          # --provenance attaches a GitHub attestation either way.
+          # Authentication: GitHub OIDC (npm trusted publishing),
+          # configured on npmjs.com for this repository + this workflow
+          # file + environment "npm". --provenance attaches a GitHub
+          # attestation to the package.
+          # (Prefer a token instead? Create the NPM_TOKEN repo secret and
+          # add: env: NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }})
+          node -v
+          npm -v
+          node -p "process.env.GITHUB_TOKEN ? 'GITHUB_TOKEN present (' + String(process.env.GITHUB_TOKEN).length + ' chars)' : 'GITHUB_TOKEN MISSING'"
+          npm whoami --registry https://registry.npmjs.org || echo "(whoami could not resolve an identity — the publish step will show why)"
           npm publish --provenance
