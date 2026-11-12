@@ -1,7 +1,7 @@
 {
   "name": "@minibear/dsh-stats-cost",
   "description": "Conversation cost statistics: set per-million-token unit prices in the plugin manager; see the cost in the composer dock and per turn",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "exports": {
     ".": "./index.js",
